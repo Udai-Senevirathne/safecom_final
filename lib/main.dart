@@ -15,7 +15,7 @@ class MyApp extends StatelessWidget {
       title: 'SafeCom Final',
       navigatorKey: AppNavigator.navigatorKey,
       onGenerateRoute: AppNavigator.generateRoute,
-      initialRoute: AppRoutes.splash, // Set to your starting screen route
+      initialRoute: AppRoutes.personalInfo, // Set to your starting screen route
       debugShowCheckedModeBanner: false,
     );
   }
