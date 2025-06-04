@@ -12,13 +12,15 @@ class AppNavigator {
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     debugPrint('Generating route for: ${settings.name}');
-    
+
     switch (settings.name) {
       case AppRoutes.splash:
         return MaterialPageRoute(builder: (_) => const SplashScreen());
       case AppRoutes.firstScreen:
-        return MaterialPageRoute(builder: (_) => const FirstScreen());
+      // Remove the null fadeAnimation parameter
+        return MaterialPageRoute(builder: (_) => const FirstScreen(fadeAnimation: null,));
       case AppRoutes.secondScreen:
+        debugPrint('Creating route for Second Screen');
         return MaterialPageRoute(builder: (_) => const SecondScreen());
       case AppRoutes.login:
         return MaterialPageRoute(builder: (_) => const LoginPage());
@@ -49,5 +51,22 @@ class AppNavigator {
   static void pop([Object? result]) {
     navigatorKey.currentState?.pop(result);
   }
-}
 
+  // Additional helper methods you might find useful:
+
+  static Future<dynamic>? pushAndClearStack(String routeName, {Object? arguments}) {
+    return navigatorKey.currentState?.pushNamedAndRemoveUntil(
+      routeName,
+          (route) => false,
+      arguments: arguments,
+    );
+  }
+
+  static bool canPop() {
+    return navigatorKey.currentState?.canPop() ?? false;
+  }
+
+  static void popUntil(String routeName) {
+    navigatorKey.currentState?.popUntil(ModalRoute.withName(routeName));
+  }
+}
