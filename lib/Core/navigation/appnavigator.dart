@@ -3,9 +3,10 @@ import 'package:safecom_final/Core/navigation/app_routes.dart';
 import 'package:safecom_final/Screens/Splash_screen/splash_screen.dart';
 import 'package:safecom_final/Screens/Second_screen/second_screen.dart';
 import 'package:safecom_final/Screens/First_screen/first_screen.dart';
-import 'package:safecom_final/Screens/auth/login_page.dart';
 import 'package:safecom_final/Screens/home/harass_home.dart';
 import 'package:safecom_final/Screens/home/disaster_home.dart';
+
+import '../../Screens/auth/login_main.dart';
 
 class AppNavigator {
   static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -16,18 +17,30 @@ class AppNavigator {
     switch (settings.name) {
       case AppRoutes.splash:
         return MaterialPageRoute(builder: (_) => const SplashScreen());
+
       case AppRoutes.firstScreen:
-      // Remove the null fadeAnimation parameter
-        return MaterialPageRoute(builder: (_) => const FirstScreen(fadeAnimation: null,));
+        return MaterialPageRoute(
+          builder: (_) => FirstScreen(
+            fadeAnimation: const AlwaysStoppedAnimation(1.0),
+          ),
+        );
+
       case AppRoutes.secondScreen:
-        debugPrint('Creating route for Second Screen');
-        return MaterialPageRoute(builder: (_) => const SecondScreen());
+        return MaterialPageRoute(
+          builder: (_) => SecondScreen(
+            fadeAnimation: const AlwaysStoppedAnimation(1.0),
+          ),
+        );
+
       case AppRoutes.login:
-        return MaterialPageRoute(builder: (_) => const LoginPage());
+        return MaterialPageRoute(builder: (_) => const LoginMain());
+
       case AppRoutes.homeHarass:
         return MaterialPageRoute(builder: (_) => const HarassHome());
+
       case AppRoutes.homeDisaster:
         return MaterialPageRoute(builder: (_) => const DisasterHome());
+
       default:
         debugPrint('No route defined for ${settings.name}');
         return MaterialPageRoute(
@@ -40,6 +53,7 @@ class AppNavigator {
     }
   }
 
+  // Basic navigation helpers
   static Future<dynamic>? push(String routeName, {Object? arguments}) {
     return navigatorKey.currentState?.pushNamed(routeName, arguments: arguments);
   }
@@ -51,8 +65,6 @@ class AppNavigator {
   static void pop([Object? result]) {
     navigatorKey.currentState?.pop(result);
   }
-
-  // Additional helper methods you might find useful:
 
   static Future<dynamic>? pushAndClearStack(String routeName, {Object? arguments}) {
     return navigatorKey.currentState?.pushNamedAndRemoveUntil(

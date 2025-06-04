@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:safecom_final/Core/navigation/appnavigator.dart';
 import 'package:safecom_final/Core/navigation/app_routes.dart';
+import 'package:safecom_final/Core/navigation/appnavigator.dart';
 
 class SecondScreen extends StatelessWidget {
   final Animation<double> fadeAnimation;
@@ -11,7 +11,6 @@ class SecondScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // Background image
         FadeTransition(
           opacity: fadeAnimation,
           child: Center(
@@ -23,7 +22,6 @@ class SecondScreen extends StatelessWidget {
             ),
           ),
         ),
-        // Overlay with a message
         Positioned(
           bottom: 300,
           left: 20,
@@ -41,7 +39,6 @@ class SecondScreen extends StatelessWidget {
             ),
           ),
         ),
-        // Overlay with a message
         Positioned(
           bottom: 160,
           left: 20,
@@ -50,7 +47,7 @@ class SecondScreen extends StatelessWidget {
             opacity: fadeAnimation,
             child: const Text(
               'Report any emergency, whether it\'s a harassment incident or '
-              'a disaster situation, to ensure a swift response',
+                  'a disaster situation, to ensure a swift response',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.black,
@@ -60,7 +57,6 @@ class SecondScreen extends StatelessWidget {
             ),
           ),
         ),
-        // Button to navigate to the next screen
         Positioned(
           bottom: 40,
           right: 20,
@@ -68,6 +64,7 @@ class SecondScreen extends StatelessWidget {
             opacity: fadeAnimation,
             child: ElevatedButton(
               onPressed: () {
+                // ✅ Use the static method directly
                 AppNavigator.pushReplacement(AppRoutes.login);
               },
               style: ElevatedButton.styleFrom(
