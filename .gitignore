@@ -43,3 +43,55 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Firebase Configuration Files (SENSITIVE - DO NOT COMMIT)
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+ios/firebase_app_id_file.json
+
+# API Keys and Environment Files
+.env
+.env.local
+.env.production
+*.env
+**/apikeys.dart
+**/secrets.dart
+**/config/api_keys.dart
+
+# Firebase Local Emulator
+.firebase/
+firebase-debug.log
+firestore-debug.log
+
+# iOS Specific
+ios/Runner/Info.plist.backup
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/flutter_export_environment.sh
+
+# macOS
+macos/Pods/
+macos/.symlinks/
+
+# Windows
+windows/flutter/ephemeral/
+
+# Linux
+linux/flutter/ephemeral/
+
+# Local database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated files that should not be committed
+**/*.g.dart
+**/*.freezed.dart
+**/*.mocks.dart
+
+# Coverage reports
+coverage/
+lcov.info
+
+# Test related
+test/.test_coverage.dart
