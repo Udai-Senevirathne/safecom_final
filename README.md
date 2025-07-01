@@ -139,16 +139,6 @@ The project has undergone a major architectural refactoring:
 - **Incident Reporting**: 🔄 In Development
 - **Safety Monitoring**: 🔄 In Development
 
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/new-feature`)
-3. Follow the Clean Architecture patterns
-4. Write tests for new functionality
-5. Commit changes (`git commit -am 'Add new feature'`)
-6. Push to branch (`git push origin feature/new-feature`)
-7. Create a Pull Request
-
 ### Code Standards
 - Follow Dart/Flutter style guidelines
 - Implement Clean Architecture principles
