@@ -4,6 +4,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'dart:io';
 import 'package:safecom_final/Core/services/auth_service.dart';
+import 'package:safecom_final/Core/services/google_signin_service.dart';
 
 class FirebaseService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -43,7 +44,13 @@ class FirebaseService {
 
       // Save login status and user data locally
       await AuthService.setLoginStatus(true);
-      await AuthService.saveUserData(fullName, email, phone);
+      await AuthService.saveUserData(
+        fullName,
+        email,
+        phone,
+        emailVerified: userCredential.user?.emailVerified.toString(),
+        signInMethod: 'email',
+      );
 
       return {
         'success': true,
@@ -111,9 +118,48 @@ class FirebaseService {
 
   /// Sign out current user
   static Future<void> signOut() async {
-    await _auth.signOut();
-    // Clear local authentication status
-    await AuthService.setLoginStatus(false);
+    try {
+      print('🔵 [Firebase] Starting sign out process...');
+
+      // 1. Sign out from Firebase Auth (with timeout)
+      await _auth.signOut().timeout(Duration(seconds: 5));
+      print('🟢 [Firebase] Firebase Auth sign out completed');
+
+      // 2. Sign out from Google (with timeout and error handling)
+      try {
+        await GoogleSignInService.signOutFromGoogle().timeout(
+          Duration(seconds: 5),
+        );
+        print('🟢 [Firebase] Google sign out completed');
+      } catch (e) {
+        print('🟠 [Firebase] Google sign out error (continuing anyway): $e');
+        // Don't throw - continue with local cleanup
+      }
+
+      // 3. Clear local authentication status
+      await AuthService.setLoginStatus(false);
+      print('🟢 [Firebase] Login status cleared');
+
+      // 4. Clear local user data
+      await AuthService.signOut();
+      print('🟢 [Firebase] Local user data cleared');
+
+      print('🟢 [Firebase] Sign out process completed successfully');
+    } catch (e) {
+      print('🔴 [Firebase] Sign out error: $e');
+
+      // Even if sign out fails, try to clear local data
+      try {
+        await AuthService.setLoginStatus(false);
+        await AuthService.signOut();
+        print('🟠 [Firebase] Local cleanup completed despite sign out error');
+      } catch (localError) {
+        print('🔴 [Firebase] Local cleanup also failed: $localError');
+      }
+
+      // Re-throw the original error
+      rethrow;
+    }
   }
 
   /// Delete user account and all associated data
@@ -452,6 +498,104 @@ class FirebaseService {
         return 'Too many attempts. Please try again later.';
       default:
         return 'An error occurred. Please try again.';
+    }
+  }
+
+  /// Upload profile image to Firebase Storage
+  static Future<String?> uploadProfileImage(File imageFile) async {
+    try {
+      User? user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('No user is currently signed in');
+      }
+
+      final String fileName =
+          'profile_${user.uid}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final Reference storageRef = _storage.ref().child(
+        'profile_images/$fileName',
+      );
+
+      print('🔵 [Firebase] Uploading profile image: $fileName');
+
+      // Upload the file
+      final UploadTask uploadTask = storageRef.putFile(imageFile);
+      final TaskSnapshot snapshot = await uploadTask;
+
+      // Get download URL
+      final String downloadUrl = await snapshot.ref.getDownloadURL();
+      print('🟢 [Firebase] Profile image uploaded successfully: $downloadUrl');
+
+      // Update user profile in Firestore
+      try {
+        await _firestore.collection('users').doc(user.uid).update({
+          'photoUrl': downloadUrl,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        print('🟢 [Firebase] User profile updated with new photo URL');
+      } catch (firestoreError) {
+        print(
+          '🟠 [Firebase] Firestore update failed, but image uploaded: $firestoreError',
+        );
+        // Return URL anyway since image was uploaded successfully
+      }
+
+      return downloadUrl;
+    } catch (e) {
+      print('🔴 [Firebase] Error uploading profile image: $e');
+      return null;
+    }
+  }
+
+  /// Remove profile image from user profile
+  static Future<void> removeProfileImage() async {
+    try {
+      User? user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('No user is currently signed in');
+      }
+
+      print('🔵 [Firebase] Removing profile image for user: ${user.uid}');
+
+      // Get current photo URL to delete from storage
+      try {
+        final userDoc =
+            await _firestore.collection('users').doc(user.uid).get();
+        if (userDoc.exists && userDoc.data()!['photoUrl'] != null) {
+          final String photoUrl = userDoc.data()!['photoUrl'];
+
+          // Delete from Firebase Storage if it's a Firebase Storage URL
+          if (photoUrl.contains('firebase') &&
+              photoUrl.contains('profile_images')) {
+            try {
+              final Reference photoRef = _storage.refFromURL(photoUrl);
+              await photoRef.delete();
+              print('🟢 [Firebase] Profile image deleted from storage');
+            } catch (storageError) {
+              print(
+                '🟠 [Firebase] Could not delete from storage (may not exist): $storageError',
+              );
+            }
+          }
+        }
+      } catch (e) {
+        print(
+          '🟠 [Firebase] Could not retrieve current photo for deletion: $e',
+        );
+      }
+
+      // Remove photo URL from Firestore
+      try {
+        await _firestore.collection('users').doc(user.uid).update({
+          'photoUrl': FieldValue.delete(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        print('🟢 [Firebase] Photo URL removed from user profile');
+      } catch (firestoreError) {
+        print('🟠 [Firebase] Firestore update failed: $firestoreError');
+      }
+    } catch (e) {
+      print('🔴 [Firebase] Error removing profile image: $e');
+      rethrow;
     }
   }
 }

@@ -65,14 +65,10 @@ class AppNavigator {
         return MaterialPageRoute(builder: (_) => const TipsDetail());
 
       case AppRoutes.personalEdit:
-        return MaterialPageRoute(
-          builder: (_) => const PersonalInfoContent(user: {}),
-        );
+        return MaterialPageRoute(builder: (_) => const PersonalInfoContent());
 
       case AppRoutes.personalInfo:
-        return MaterialPageRoute(
-          builder: (_) => const PersonalInfoContent(user: {}),
-        );
+        return MaterialPageRoute(builder: (_) => const PersonalInfoContent());
 
       case AppRoutes.profile:
         return MaterialPageRoute(builder: (_) => const EditProfileContent());

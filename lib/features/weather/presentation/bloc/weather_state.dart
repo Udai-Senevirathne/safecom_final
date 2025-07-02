@@ -15,11 +15,16 @@ class WeatherLoading extends WeatherState {}
 class WeatherLoaded extends WeatherState {
   final WeatherEntity weather;
   final DateTime lastUpdated;
+  final bool isDefaultLocation;
 
-  const WeatherLoaded({required this.weather, required this.lastUpdated});
+  const WeatherLoaded({
+    required this.weather,
+    required this.lastUpdated,
+    this.isDefaultLocation = false,
+  });
 
   @override
-  List<Object?> get props => [weather, lastUpdated];
+  List<Object?> get props => [weather, lastUpdated, isDefaultLocation];
 }
 
 class WeatherError extends WeatherState {

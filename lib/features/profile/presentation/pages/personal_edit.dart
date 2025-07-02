@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:safecom_final/Core/services/auth_service.dart';
+import 'package:safecom_final/Core/services/firebase_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 
 class PersonalInfoContent extends StatefulWidget {
-  const PersonalInfoContent({super.key, required Map user});
+  const PersonalInfoContent({super.key});
 
   @override
   State<PersonalInfoContent> createState() => _PersonalInfoContentState();
@@ -15,6 +16,7 @@ class PersonalInfoContent extends StatefulWidget {
 class _PersonalInfoContentState extends State<PersonalInfoContent> {
   String? selectedGender;
   File? selectedImage;
+  String? existingPhotoUrl;
   final ImagePicker _picker = ImagePicker();
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
@@ -38,23 +40,29 @@ class _PersonalInfoContentState extends State<PersonalInfoContent> {
   @override
   void initState() {
     super.initState();
+    print('🔍 [PersonalEdit] Widget initialized');
     _loadUserData();
   }
 
-  void _loadUserData() async {
+  Future<void> _loadUserData() async {
+    print('🔍 [PersonalEdit] Loading user data...');
     try {
       final userData = await AuthService.getUserData();
       final prefs = await SharedPreferences.getInstance();
+      print('🔍 [PersonalEdit] User data loaded: ${userData.keys}');
 
       setState(() {
         _nameController.text = userData['name'] ?? '';
         _emailController.text = userData['email'] ?? '';
         _phoneController.text = userData['phone'] ?? '';
+        existingPhotoUrl = userData['photoUrl'];
         // Load saved gender from SharedPreferences
         selectedGender = prefs.getString('user_gender');
         isLoading = false;
       });
+      print('🔍 [PersonalEdit] UI state updated, isLoading: $isLoading');
     } catch (e) {
+      print('🔴 [PersonalEdit] Error loading user data: $e');
       setState(() {
         isLoading = false;
       });
@@ -73,6 +81,7 @@ class _PersonalInfoContentState extends State<PersonalInfoContent> {
 
   @override
   Widget build(BuildContext context) {
+    print('🔍 [PersonalEdit] Building widget, isLoading: $isLoading');
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
@@ -147,22 +156,7 @@ class _PersonalInfoContentState extends State<PersonalInfoContent> {
                                         width: 3,
                                       ),
                                     ),
-                                    child: CircleAvatar(
-                                      radius: 50,
-                                      backgroundColor: Colors.grey.shade200,
-                                      backgroundImage:
-                                          selectedImage != null
-                                              ? FileImage(selectedImage!)
-                                              : null,
-                                      child:
-                                          selectedImage == null
-                                              ? Icon(
-                                                Icons.person,
-                                                size: 50,
-                                                color: Colors.grey.shade600,
-                                              )
-                                              : null,
-                                    ),
+                                    child: _buildProfileAvatar(),
                                   ),
                                   Positioned(
                                     bottom: 4,
@@ -188,11 +182,18 @@ class _PersonalInfoContentState extends State<PersonalInfoContent> {
                               ),
                               const SizedBox(height: 16),
                               Text(
-                                'Update Profile Picture',
+                                selectedImage != null
+                                    ? 'New Picture Selected'
+                                    : (existingPhotoUrl?.isNotEmpty == true
+                                        ? 'Tap to Change Picture'
+                                        : 'Tap to Add Picture'),
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
-                                  color: Colors.red.shade600,
+                                  color:
+                                      selectedImage != null
+                                          ? Colors.green.shade600
+                                          : Colors.red.shade600,
                                 ),
                               ),
                             ],
@@ -272,6 +273,37 @@ class _PersonalInfoContentState extends State<PersonalInfoContent> {
                               );
 
                               try {
+                                // Handle profile photo changes
+                                if (selectedImage != null) {
+                                  // Upload new profile photo
+                                  final photoUrl =
+                                      await FirebaseService.uploadProfileImage(
+                                        selectedImage!,
+                                      );
+                                  if (photoUrl != null) {
+                                    await AuthService.updateUserPhotoUrl(
+                                      photoUrl,
+                                    );
+                                    // Update the local state immediately
+                                    setState(() {
+                                      existingPhotoUrl = photoUrl;
+                                      selectedImage =
+                                          null; // Clear selected image since it's now saved
+                                    });
+                                  }
+                                } else if (existingPhotoUrl == null &&
+                                    (await AuthService.getUserData())['photoUrl']
+                                            ?.isNotEmpty ==
+                                        true) {
+                                  // Remove profile photo if user removed it
+                                  await FirebaseService.removeProfileImage();
+                                  await AuthService.updateUserPhotoUrl('');
+                                  // Update the local state immediately
+                                  setState(() {
+                                    existingPhotoUrl = null;
+                                  });
+                                }
+
                                 // Update profile using AuthService
                                 final success = await AuthService.updateProfile(
                                   name: _nameController.text.trim(),
@@ -285,6 +317,9 @@ class _PersonalInfoContentState extends State<PersonalInfoContent> {
                                   ).pop(); // Close loading dialog
 
                                   if (success) {
+                                    // Reload user data to ensure everything is in sync
+                                    await _loadUserData();
+
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                         content: const Text(
@@ -566,6 +601,34 @@ class _PersonalInfoContentState extends State<PersonalInfoContent> {
     await prefs.setString('user_gender', gender);
   }
 
+  // Build profile avatar widget
+  Widget _buildProfileAvatar() {
+    print(
+      '🔍 [PersonalEdit] Building avatar - selectedImage: ${selectedImage != null}, existingPhotoUrl: $existingPhotoUrl',
+    );
+
+    ImageProvider? imageProvider;
+    Widget? child;
+
+    if (selectedImage != null) {
+      imageProvider = FileImage(selectedImage!);
+      print('🔍 [PersonalEdit] Using selected image');
+    } else if (existingPhotoUrl?.isNotEmpty == true) {
+      imageProvider = NetworkImage(existingPhotoUrl!);
+      print('🔍 [PersonalEdit] Using existing photo URL: $existingPhotoUrl');
+    } else {
+      print('🔍 [PersonalEdit] Using default person icon');
+      child = Icon(Icons.person, size: 50, color: Colors.grey.shade600);
+    }
+
+    return CircleAvatar(
+      radius: 50,
+      backgroundColor: Colors.grey.shade300,
+      backgroundImage: imageProvider,
+      child: child,
+    );
+  }
+
   // Request camera permission
   Future<bool> _requestCameraPermission() async {
     final status = await Permission.camera.request();
@@ -574,7 +637,23 @@ class _PersonalInfoContentState extends State<PersonalInfoContent> {
 
   // Request photo library permission
   Future<bool> _requestPhotosPermission() async {
-    final status = await Permission.photos.request();
+    // Try different permissions based on platform
+    PermissionStatus status;
+
+    // For newer Android versions, try photos permission first
+    status = await Permission.photos.request();
+    if (status == PermissionStatus.granted) {
+      return true;
+    }
+
+    // Fallback to storage permission for older Android versions
+    status = await Permission.storage.request();
+    if (status == PermissionStatus.granted) {
+      return true;
+    }
+
+    // For some devices, try media library permission
+    status = await Permission.mediaLibrary.request();
     return status == PermissionStatus.granted;
   }
 
@@ -611,6 +690,17 @@ class _PersonalInfoContentState extends State<PersonalInfoContent> {
                   ),
                 ],
               ),
+              // Add remove option if user has existing photo
+              if (selectedImage != null ||
+                  existingPhotoUrl?.isNotEmpty == true) ...[
+                const SizedBox(height: 16),
+                _buildImageOption(
+                  'Remove',
+                  Icons.delete,
+                  () => _removePhoto(),
+                  isDestructive: true,
+                ),
+              ],
               const SizedBox(height: 20),
             ],
           ),
@@ -619,25 +709,37 @@ class _PersonalInfoContentState extends State<PersonalInfoContent> {
     );
   }
 
-  Widget _buildImageOption(String title, IconData icon, VoidCallback onTap) {
+  Widget _buildImageOption(
+    String title,
+    IconData icon,
+    VoidCallback onTap, {
+    bool isDestructive = false,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.red.shade50,
+          color: isDestructive ? Colors.red.shade50 : Colors.red.shade50,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.red.shade200),
+          border: Border.all(
+            color: isDestructive ? Colors.red.shade400 : Colors.red.shade200,
+          ),
         ),
         child: Column(
           children: [
-            Icon(icon, size: 32, color: Colors.red.shade600),
+            Icon(
+              icon,
+              size: 32,
+              color: isDestructive ? Colors.red.shade700 : Colors.red.shade600,
+            ),
             const SizedBox(height: 8),
             Text(
               title,
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                color: Colors.red.shade600,
+                color:
+                    isDestructive ? Colors.red.shade700 : Colors.red.shade600,
               ),
             ),
           ],
@@ -650,22 +752,7 @@ class _PersonalInfoContentState extends State<PersonalInfoContent> {
   Future<void> _pickImage(ImageSource source) async {
     Navigator.pop(context); // Close bottom sheet
 
-    bool hasPermission = false;
-
-    if (source == ImageSource.camera) {
-      hasPermission = await _requestCameraPermission();
-      if (!hasPermission) {
-        _showPermissionDialog('Camera', 'camera access');
-        return;
-      }
-    } else {
-      hasPermission = await _requestPhotosPermission();
-      if (!hasPermission) {
-        _showPermissionDialog('Photos', 'photo library access');
-        return;
-      }
-    }
-
+    // Try to pick image first, handle permissions if needed
     try {
       final XFile? image = await _picker.pickImage(
         source: source,
@@ -679,11 +766,62 @@ class _PersonalInfoContentState extends State<PersonalInfoContent> {
           selectedImage = File(image.path);
         });
 
-        _showSuccessMessage('Profile picture updated successfully!');
+        _showSuccessMessage('Profile picture selected successfully!');
       }
     } catch (e) {
-      _showErrorMessage('Error picking image: $e');
+      // If picking fails, it might be due to permissions
+      print('Image picker error: $e');
+
+      bool hasPermission = false;
+
+      if (source == ImageSource.camera) {
+        hasPermission = await _requestCameraPermission();
+        if (!hasPermission) {
+          _showPermissionDialog('Camera', 'camera access');
+          return;
+        }
+      } else {
+        hasPermission = await _requestPhotosPermission();
+        if (!hasPermission) {
+          _showPermissionDialog('Photos', 'photo library access');
+          return;
+        }
+      }
+
+      // Try again after getting permission
+      if (hasPermission) {
+        try {
+          final XFile? image = await _picker.pickImage(
+            source: source,
+            maxWidth: 1024,
+            maxHeight: 1024,
+            imageQuality: 85,
+          );
+
+          if (image != null) {
+            setState(() {
+              selectedImage = File(image.path);
+            });
+
+            _showSuccessMessage('Profile picture selected successfully!');
+          }
+        } catch (e2) {
+          _showErrorMessage('Error selecting image: ${e2.toString()}');
+        }
+      }
     }
+  }
+
+  // Remove photo
+  void _removePhoto() {
+    Navigator.pop(context); // Close bottom sheet
+    setState(() {
+      selectedImage = null;
+      existingPhotoUrl = null;
+    });
+    _showSuccessMessage(
+      'Profile picture removed. Don\'t forget to save changes.',
+    );
   }
 
   // Show permission dialog
@@ -693,20 +831,43 @@ class _PersonalInfoContentState extends State<PersonalInfoContent> {
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text('$permissionType Permission Required'),
-          content: Text(
-            'SafeCom needs $usage to update your profile picture. Please grant permission in your device settings.',
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'SafeCom needs $usage to update your profile picture.',
+                style: const TextStyle(fontSize: 16),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Please grant permission in your device settings:',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '1. Go to Settings\n2. Find SafeCom app\n3. Enable $permissionType permission',
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+              ),
+            ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Cancel'),
             ),
-            TextButton(
+            ElevatedButton(
               onPressed: () {
                 Navigator.pop(context);
                 openAppSettings(); // Opens device settings
               },
-              child: const Text('Settings'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade600,
+              ),
+              child: const Text(
+                'Open Settings',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ],
         );

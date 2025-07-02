@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
+import 'auth_service.dart';
 
 class GoogleSignInService {
   static final GoogleSignIn _googleSignIn = GoogleSignIn(
@@ -83,6 +84,10 @@ class GoogleSignInService {
             .get()
             .timeout(Duration(seconds: 5));
 
+        String fullName = user.displayName ?? '';
+        String email = user.email ?? '';
+        String phone = user.phoneNumber ?? '';
+
         if (!userDoc.exists) {
           print('🔵 [GoogleSignIn] Creating new user profile in Firestore...');
           // Create user profile for new Google user
@@ -90,9 +95,9 @@ class GoogleSignInService {
               .collection('users')
               .doc(user.uid)
               .set({
-                'fullName': user.displayName ?? '',
-                'email': user.email ?? '',
-                'phone': user.phoneNumber ?? '',
+                'fullName': fullName,
+                'email': email,
+                'phone': phone,
                 'profilePicture': user.photoURL ?? '',
                 'createdAt': FieldValue.serverTimestamp(),
                 'isActive': true,
@@ -102,6 +107,12 @@ class GoogleSignInService {
           print('🟢 [GoogleSignIn] New user profile created successfully');
         } else {
           print('🔵 [GoogleSignIn] Updating existing user profile...');
+          // Get existing user data from Firestore
+          final userData = userDoc.data() as Map<String, dynamic>;
+          fullName = userData['fullName'] ?? fullName;
+          email = userData['email'] ?? email;
+          phone = userData['phone'] ?? phone;
+
           // Update last sign in time for existing user
           await _firestore
               .collection('users')
@@ -110,13 +121,40 @@ class GoogleSignInService {
               .timeout(Duration(seconds: 5));
           print('🟢 [GoogleSignIn] User profile updated successfully');
         }
+
+        // CRITICAL: Save user data to local AuthService storage
+        print('🔵 [GoogleSignIn] Saving user data to local storage...');
+        await AuthService.setLoginStatus(true);
+        await AuthService.saveUserData(
+          fullName,
+          email,
+          phone,
+          photoUrl: user.photoURL,
+          googleId: user.uid,
+          emailVerified: user.emailVerified.toString(),
+          signInMethod: 'google',
+        );
+        print(
+          '🟢 [GoogleSignIn] User data saved to local storage successfully',
+        );
       } catch (timeoutError) {
         print('🟠 [GoogleSignIn] Firestore operation timed out: $timeoutError');
         print(
           '🟠 [GoogleSignIn] But user is signed in to Firebase, proceeding...',
         );
-        // Even if Firestore operations fail, the user is authenticated in Firebase
-        // We can still proceed with the sign-in
+
+        // Even if Firestore operations fail, save basic user data locally
+        await AuthService.setLoginStatus(true);
+        await AuthService.saveUserData(
+          user.displayName ?? 'Google User',
+          user.email ?? '',
+          user.phoneNumber ?? '',
+          photoUrl: user.photoURL,
+          googleId: user.uid,
+          emailVerified: user.emailVerified.toString(),
+          signInMethod: 'google',
+        );
+        print('🟢 [GoogleSignIn] Basic user data saved to local storage');
       }
 
       print('🟢 [GoogleSignIn] Google Sign-In process completed successfully');
@@ -134,9 +172,21 @@ class GoogleSignInService {
   /// Sign out from Google
   static Future<void> signOutFromGoogle() async {
     try {
+      print('🔵 [GoogleSignOut] Starting Google sign out...');
+
+      // Check if user is currently signed in
+      final currentUser = _googleSignIn.currentUser;
+      if (currentUser == null) {
+        print('🟠 [GoogleSignOut] No Google user currently signed in');
+        return;
+      }
+
+      print('🔵 [GoogleSignOut] Signing out user: ${currentUser.email}');
       await _googleSignIn.signOut();
+      print('🟢 [GoogleSignOut] Google sign out completed successfully');
     } catch (e) {
-      print('Google sign out error: $e');
+      print('🔴 [GoogleSignOut] Google sign out error: $e');
+      // Don't re-throw - let the calling function handle this gracefully
     }
   }
 

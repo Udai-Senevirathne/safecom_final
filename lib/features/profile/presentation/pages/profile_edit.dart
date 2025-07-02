@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 import 'package:safecom_final/Core/navigation/appnavigator.dart';
 import 'package:safecom_final/Core/navigation/app_routes.dart';
 import 'package:safecom_final/Core/services/auth_service.dart';
 import 'package:safecom_final/Core/services/firebase_service.dart';
+import 'package:safecom_final/Core/utils/logger.dart';
 
 class EditProfileContent extends StatefulWidget {
   const EditProfileContent({super.key});
@@ -14,25 +18,62 @@ class EditProfileContent extends StatefulWidget {
 class _EditProfileContentState extends State<EditProfileContent> {
   Map<String, String?> userData = {};
   bool isLoading = true;
+  StreamSubscription<Map<String, String?>>? _userDataSubscription;
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+
+    // Listen for user data changes
+    _userDataSubscription = AuthService.userDataStream.listen((
+      updatedUserData,
+    ) {
+      AppLogger.profile('Received user data update: ${updatedUserData.keys}');
+      setState(() {
+        userData = updatedUserData;
+      });
+    });
+  }
+
+  // Add lifecycle listener to refresh when returning from other pages
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh data when coming back from other screens
+    ModalRoute.of(context)?.addScopedWillPopCallback(() async {
+      _loadUserData();
+      return true;
+    });
+  }
+
+  @override
+  void dispose() {
+    _userDataSubscription?.cancel();
+    super.dispose();
   }
 
   void _loadUserData() async {
     try {
+      AppLogger.profile('Loading user data...');
       final data = await AuthService.getUserData();
+      AppLogger.profile('User data loaded: ${data.keys}');
       setState(() {
         userData = data;
         isLoading = false;
       });
     } catch (e) {
+      AppLogger.error('Error loading user data', 'Profile', e);
       setState(() {
         isLoading = false;
       });
     }
+  }
+
+  // Add a refresh method that can be called when returning from other screens
+  void _refreshUserData() {
+    AppLogger.profile('Refreshing user data...');
+    _loadUserData();
   }
 
   @override
@@ -100,28 +141,71 @@ class _EditProfileContentState extends State<EditProfileContent> {
                   padding: const EdgeInsets.all(32),
                   child: Column(
                     children: [
-                      // Profile Picture with modern styling
-                      Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 4),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
-                              blurRadius: 20,
-                              offset: const Offset(0, 10),
+                      // Profile Picture with modern styling and edit button
+                      Stack(
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 4),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 20,
+                                  offset: const Offset(0, 10),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                        child: CircleAvatar(
-                          radius: 60,
-                          backgroundColor: Colors.grey.shade300,
-                          child: Icon(
-                            Icons.person,
-                            size: 70,
-                            color: Colors.grey.shade600,
+                            child: CircleAvatar(
+                              radius: 60,
+                              backgroundColor: Colors.grey.shade300,
+                              backgroundImage:
+                                  userData['photoUrl']?.isNotEmpty == true
+                                      ? NetworkImage(userData['photoUrl']!)
+                                      : null,
+                              child:
+                                  userData['photoUrl']?.isNotEmpty != true
+                                      ? Icon(
+                                        Icons.person,
+                                        size: 70,
+                                        color: Colors.grey.shade600,
+                                      )
+                                      : null,
+                            ),
                           ),
-                        ),
+                          // Add Edit Profile Picture Button - Only show if there's already a profile image
+                          if (userData['photoUrl']?.isNotEmpty == true)
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: GestureDetector(
+                                onTap: () => _showImagePickerOptions(),
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.shade600,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: Colors.white,
+                                      width: 2,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.2),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Icon(
+                                    Icons.edit,
+                                    color: Colors.white,
+                                    size: 16,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
 
                       const SizedBox(height: 20),
@@ -202,6 +286,86 @@ class _EditProfileContentState extends State<EditProfileContent> {
                           ),
                         ),
                       ],
+
+                      // Display sign-in method if available
+                      if (userData['signInMethod']?.isNotEmpty == true) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.8),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                userData['signInMethod'] == 'google'
+                                    ? Icons.g_mobiledata
+                                    : Icons.login,
+                                size: 16,
+                                color: Colors.red.shade600,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Signed in with ${userData['signInMethod']?.toUpperCase() ?? 'Unknown'}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.red.shade600,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
+                      // Display email verification status if available
+                      if (userData['emailVerified']?.isNotEmpty == true) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.8),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                userData['emailVerified'] == 'true'
+                                    ? Icons.verified_user
+                                    : Icons.warning_amber,
+                                size: 16,
+                                color:
+                                    userData['emailVerified'] == 'true'
+                                        ? Colors.green.shade600
+                                        : Colors.orange.shade600,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                userData['emailVerified'] == 'true'
+                                    ? 'Email Verified'
+                                    : 'Email Not Verified',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color:
+                                      userData['emailVerified'] == 'true'
+                                          ? Colors.green.shade600
+                                          : Colors.orange.shade600,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -221,8 +385,10 @@ class _EditProfileContentState extends State<EditProfileContent> {
                       subtitle: 'Update your profile details',
                       icon: Icons.person_outline,
                       iconColor: Colors.blue,
-                      onTap: () {
-                        AppNavigator.push(AppRoutes.personalInfo);
+                      onTap: () async {
+                        await AppNavigator.push(AppRoutes.personalInfo);
+                        // Refresh user data when returning from personal info page
+                        _refreshUserData();
                       },
                     ),
 
@@ -425,40 +591,445 @@ class _EditProfileContentState extends State<EditProfileContent> {
               onPressed: () async {
                 Navigator.of(context).pop();
 
-                // Show loading indicator
+                AppLogger.profile(
+                  'NUCLEAR OPTION: Immediate logout without any delays',
+                );
+
+                // NUCLEAR OPTION: Skip loading dialog entirely and navigate immediately
+                try {
+                  // Immediately clear login status
+                  await AuthService.setLoginStatus(false);
+                  AppLogger.profile(
+                    'NUCLEAR: Login status cleared immediately',
+                  );
+                } catch (e) {
+                  AppLogger.warning(
+                    'NUCLEAR: Could not clear login status',
+                    'Profile',
+                  );
+                }
+
+                // Immediately navigate without any loading dialog
+                try {
+                  Navigator.of(
+                    context,
+                  ).pushNamedAndRemoveUntil(AppRoutes.signIn, (route) => false);
+                  AppLogger.success(
+                    'NUCLEAR: Immediate navigation to login successful!',
+                  );
+
+                  // Start background sign-out (non-blocking)
+                  FirebaseService.signOut()
+                      .then((_) {
+                        print(' [Profile] Background sign-out completed');
+                      })
+                      .catchError((e) {
+                        AppLogger.error(
+                          'Background sign-out error',
+                          'Profile',
+                          e,
+                        );
+                      });
+
+                  return; // Exit immediately after navigation
+                } catch (e) {
+                  AppLogger.error(
+                    'NUCLEAR: Immediate navigation failed',
+                    'Profile',
+                    e,
+                  );
+                }
+
+                // If immediate navigation fails, show minimal loading and force navigation
                 showDialog(
                   context: context,
                   barrierDismissible: false,
                   builder:
-                      (context) =>
-                          const Center(child: CircularProgressIndicator()),
+                      (dialogContext) => const AlertDialog(
+                        content: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(color: Colors.red),
+                            SizedBox(height: 16),
+                            Text('Logging out...'),
+                          ],
+                        ),
+                      ),
                 );
 
-                try {
-                  // Use FirebaseService to logout (this will also clear local data)
-                  await FirebaseService.signOut();
+                // Store context reference before async operations
+                final navigatorContext = Navigator.of(context);
 
-                  if (context.mounted) {
-                    // Close loading dialog
-                    Navigator.of(context).pop();
+                // Force navigation after timeout regardless of sign-out result
+                bool navigationHandled = false;
 
-                    // Navigate to login screen
-                    Navigator.of(context).pushNamedAndRemoveUntil(
-                      AppRoutes.signIn,
-                      (route) => false,
+                // ULTRA AGGRESSIVE: Force navigation after just 2 seconds
+                Timer(Duration(seconds: 2), () async {
+                  if (!navigationHandled && context.mounted) {
+                    AppLogger.warning(
+                      'ULTRA AGGRESSIVE (2s) - forcing navigation NOW!',
                     );
+                    navigationHandled = true;
+
+                    // Force close loading dialog
+                    try {
+                      Navigator.of(context).pop();
+                      AppLogger.debug('ULTRA: Dialog forcibly closed');
+                    } catch (e) {
+                      AppLogger.warning(
+                        'ULTRA: Could not close dialog',
+                        'Profile',
+                      );
+                    }
+
+                    // Force clear login status
+                    try {
+                      await AuthService.setLoginStatus(false);
+                      AppLogger.debug('ULTRA: Login status forcibly cleared');
+                    } catch (e) {
+                      AppLogger.warning(
+                        'ULTRA: Could not clear login status',
+                        'Profile',
+                      );
+                    }
+
+                    // Force navigation
+                    try {
+                      navigatorContext.pushNamedAndRemoveUntil(
+                        AppRoutes.signIn,
+                        (route) => false,
+                      );
+                      AppLogger.success(
+                        'ULTRA: Navigation to login successful!',
+                      );
+                    } catch (e) {
+                      AppLogger.error('ULTRA: Navigation failed', 'Profile', e);
+                      // Ultimate fallback
+                      try {
+                        Navigator.of(context).pushNamedAndRemoveUntil(
+                          AppRoutes.signIn,
+                          (route) => false,
+                        );
+                        AppLogger.success(
+                          'ULTRA: Fallback navigation successful!',
+                        );
+                      } catch (fallbackError) {
+                        AppLogger.error(
+                          'ULTRA: Even fallback failed',
+                          'Profile',
+                          fallbackError,
+                        );
+                      }
+                    }
+                  }
+                });
+
+                // INSTANT NAVIGATION: Start navigation process immediately
+                Timer(Duration(milliseconds: 500), () async {
+                  if (!navigationHandled && context.mounted) {
+                    print(
+                      '🚀 [Profile] INSTANT (0.5s) - starting navigation process',
+                    );
+
+                    // Force clear login status immediately
+                    try {
+                      await AuthService.setLoginStatus(false);
+                      print(
+                        '🚀 [Profile] INSTANT: Login status cleared immediately',
+                      );
+                    } catch (e) {
+                      print(
+                        '🟠 [Profile] INSTANT: Could not clear login status: $e',
+                      );
+                    }
+                  }
+                });
+
+                // Immediate timeout - force navigation after 4 seconds
+                Timer(Duration(seconds: 4), () {
+                  if (!navigationHandled && context.mounted) {
+                    print(
+                      '⚡ [Profile] Quick timeout (4s) - forcing navigation',
+                    );
+                    navigationHandled = true;
+
+                    // Force close any open dialogs
+                    try {
+                      Navigator.of(context).pop();
+                      print('⚡ [Profile] Quick timeout: Dialog closed');
+                    } catch (e) {
+                      print(
+                        '🟠 [Profile] Quick timeout: Could not close dialog: $e',
+                      );
+                    }
+
+                    // Force navigation
+                    try {
+                      navigatorContext.pushNamedAndRemoveUntil(
+                        AppRoutes.signIn,
+                        (route) => false,
+                      );
+                      print(
+                        '⚡ [Profile] Quick timeout: Navigation to login successful',
+                      );
+                    } catch (e) {
+                      print(
+                        '🔴 [Profile] Quick timeout: Navigation failed: $e',
+                      );
+                    }
+                  }
+                });
+
+                // Backup timeout - force navigation after 8 seconds no matter what
+                Timer(Duration(seconds: 8), () {
+                  if (!navigationHandled && context.mounted) {
+                    print(
+                      '🚨 [Profile] Emergency timeout (8s) - forcing navigation',
+                    );
+                    navigationHandled = true;
+
+                    // Force close any open dialogs
+                    try {
+                      print('🚨 [Profile] Emergency: Closing dialogs...');
+                      Navigator.of(context).pop();
+                    } catch (e) {
+                      print('🟠 [Profile] Could not close dialog: $e');
+                    }
+
+                    // Force navigation with multiple fallbacks
+                    try {
+                      print(
+                        '🚨 [Profile] Emergency: Attempting login navigation...',
+                      );
+                      navigatorContext.pushNamedAndRemoveUntil(
+                        AppRoutes.signIn,
+                        (route) => false,
+                      );
+                      print(
+                        '🟢 [Profile] Emergency navigation to login successful',
+                      );
+                    } catch (e) {
+                      print(
+                        '🔴 [Profile] Emergency splash navigation failed: $e',
+                      );
+
+                      // Ultimate fallback
+                      try {
+                        print(
+                          '🚨 [Profile] Ultimate fallback: Direct sign-in navigation...',
+                        );
+                        Navigator.of(context).pushNamedAndRemoveUntil(
+                          AppRoutes.signIn,
+                          (route) => false,
+                        );
+                        print('🟢 [Profile] Ultimate fallback successful');
+                      } catch (ultimateError) {
+                        print(
+                          '🔴 [Profile] Ultimate fallback failed: $ultimateError',
+                        );
+
+                        // Last resort: Pop all and go to root
+                        try {
+                          print('🚨 [Profile] Last resort: Going to root...');
+                          Navigator.of(
+                            context,
+                          ).pushNamedAndRemoveUntil('/', (route) => false);
+                        } catch (rootError) {
+                          print(
+                            '🔴 [Profile] Even root navigation failed: $rootError',
+                          );
+                        }
+                      }
+                    }
+                  }
+                });
+
+                // Start sign-out process in the background (non-blocking)
+                FirebaseService.signOut()
+                    .then((_) {
+                      print('🟢 [Profile] Background sign-out completed');
+                    })
+                    .catchError((e) {
+                      print('🔴 [Profile] Background sign-out error: $e');
+                    });
+
+                try {
+                  print('🔵 [Profile] Starting sign out process...');
+
+                  // Use FirebaseService to logout with shorter timeout
+                  await FirebaseService.signOut().timeout(
+                    Duration(seconds: 8),
+                    onTimeout: () {
+                      print(
+                        '🟠 [Profile] Sign out timed out - forcing navigation',
+                      );
+                      throw TimeoutException(
+                        'Sign out timed out but will continue with navigation',
+                        Duration(seconds: 8),
+                      );
+                    },
+                  );
+
+                  print('🟢 [Profile] Sign out completed successfully');
+
+                  // Double-check login status to ensure it's cleared
+                  final isStillLoggedIn = await AuthService.isLoggedIn();
+                  print(
+                    '🔍 [Profile] Post sign-out login status check: $isStillLoggedIn',
+                  );
+
+                  if (isStillLoggedIn) {
+                    print(
+                      '🟠 [Profile] Warning: Login status still true after sign out, forcing clear...',
+                    );
+                    await AuthService.setLoginStatus(false);
+                  }
+
+                  // IMMEDIATE NAVIGATION AFTER SUCCESSFUL SIGN-OUT
+                  if (context.mounted && !navigationHandled) {
+                    navigationHandled = true;
+                    print(
+                      '🚀 [Profile] IMMEDIATE: Handling navigation after sign-out success',
+                    );
+
+                    // Close loading dialog immediately
+                    try {
+                      Navigator.of(context).pop();
+                      print('🚀 [Profile] IMMEDIATE: Loading dialog closed');
+                    } catch (e) {
+                      print('🟠 [Profile] IMMEDIATE: Error closing dialog: $e');
+                    }
+
+                    // Navigate immediately
+                    try {
+                      print(
+                        '🚀 [Profile] IMMEDIATE: Navigating to login screen...',
+                      );
+                      navigatorContext.pushNamedAndRemoveUntil(
+                        AppRoutes.signIn,
+                        (route) => false,
+                      );
+                      print(
+                        '🚀 [Profile] IMMEDIATE: Navigation to login successful!',
+                      );
+                      return; // Exit the function immediately after successful navigation
+                    } catch (e) {
+                      print('🔴 [Profile] IMMEDIATE: Navigation failed: $e');
+                    }
                   }
                 } catch (e) {
-                  if (context.mounted) {
-                    // Close loading dialog
-                    Navigator.of(context).pop();
+                  print('🔴 [Profile] Sign out error: $e');
 
-                    // Show error message
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Logout failed: ${e.toString()}'),
-                        backgroundColor: Colors.red,
-                      ),
+                  // Force clear login status on error
+                  try {
+                    await AuthService.setLoginStatus(false);
+                    print(
+                      '🟠 [Profile] Forced login status clear due to sign out error',
+                    );
+                  } catch (clearError) {
+                    print(
+                      '🔴 [Profile] Failed to force clear login status: $clearError',
+                    );
+                  }
+
+                  // IMMEDIATE NAVIGATION AFTER ERROR
+                  if (context.mounted && !navigationHandled) {
+                    navigationHandled = true;
+                    print(
+                      '🚀 [Profile] IMMEDIATE ERROR: Handling navigation after error',
+                    );
+
+                    // Close loading dialog immediately
+                    try {
+                      Navigator.of(context).pop();
+                      print(
+                        '🚀 [Profile] IMMEDIATE ERROR: Loading dialog closed',
+                      );
+                    } catch (dialogError) {
+                      print(
+                        '🟠 [Profile] IMMEDIATE ERROR: Error closing dialog: $dialogError',
+                      );
+                    }
+
+                    // Navigate immediately
+                    try {
+                      print(
+                        '🚀 [Profile] IMMEDIATE ERROR: Navigating to login screen...',
+                      );
+                      navigatorContext.pushNamedAndRemoveUntil(
+                        AppRoutes.signIn,
+                        (route) => false,
+                      );
+                      print(
+                        '🚀 [Profile] IMMEDIATE ERROR: Navigation to login successful!',
+                      );
+                      return; // Exit the function immediately after navigation
+                    } catch (navError) {
+                      print(
+                        '🔴 [Profile] IMMEDIATE ERROR: Navigation failed: $navError',
+                      );
+                    }
+                  }
+                } finally {
+                  print('🔵 [Profile] Entering finally block...');
+                  print('🔵 [Profile] Context mounted: ${context.mounted}');
+                  print('🔵 [Profile] Navigation handled: $navigationHandled');
+
+                  // Always ensure loading dialog is closed and navigation happens
+                  if (context.mounted && !navigationHandled) {
+                    navigationHandled = true;
+                    print('🔵 [Profile] Setting navigationHandled to true');
+
+                    // Close loading dialog with error handling
+                    try {
+                      print(
+                        '🔵 [Profile] Attempting to close loading dialog...',
+                      );
+                      Navigator.of(context).pop();
+                      print('🟢 [Profile] Loading dialog closed successfully');
+                    } catch (e) {
+                      print('🟠 [Profile] Error closing dialog: $e');
+                    }
+
+                    // Small delay to ensure dialog is closed
+                    await Future.delayed(Duration(milliseconds: 100));
+
+                    // Always navigate regardless of sign-out success (better UX)
+                    print(
+                      '🟢 [Profile] Navigating to login screen directly...',
+                    );
+
+                    try {
+                      // Navigate to login screen directly
+                      navigatorContext.pushNamedAndRemoveUntil(
+                        AppRoutes.signIn,
+                        (route) => false,
+                      );
+                      print(
+                        '🟢 [Profile] Navigation to login initiated successfully',
+                      );
+                    } catch (e) {
+                      print('� [Profile] Navigation error: $e');
+
+                      // Fallback: try direct navigation to sign-in
+                      try {
+                        print(
+                          '🟠 [Profile] Attempting fallback navigation to sign-in...',
+                        );
+                        Navigator.of(context).pushNamedAndRemoveUntil(
+                          AppRoutes.signIn,
+                          (route) => false,
+                        );
+                        print('🟢 [Profile] Fallback navigation successful');
+                      } catch (fallbackError) {
+                        print(
+                          '🔴 [Profile] Fallback navigation also failed: $fallbackError',
+                        );
+                      }
+                    }
+                  } else {
+                    print(
+                      '🟠 [Profile] Finally block conditions not met - context.mounted: ${context.mounted}, navigationHandled: $navigationHandled',
                     );
                   }
                 }
@@ -507,7 +1078,7 @@ class _EditProfileContentState extends State<EditProfileContent> {
                     'Need assistance? ',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
-                  
+
                   SizedBox(height: 16),
                   Text('📧 Email: support@safecom.app'),
                   SizedBox(height: 8),
@@ -631,6 +1202,206 @@ class _EditProfileContentState extends State<EditProfileContent> {
               ),
             ],
           ),
+    );
+  }
+
+  // Image picker functionality for profile photo
+  final ImagePicker _picker = ImagePicker();
+
+  void _showImagePickerOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder:
+          (context) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      'Update Profile Photo',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.camera_alt, color: Colors.blue),
+                    ),
+                    title: const Text('Take Photo'),
+                    subtitle: const Text('Use camera to take a new photo'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _pickImage(ImageSource.camera);
+                    },
+                  ),
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.photo_library,
+                        color: Colors.green,
+                      ),
+                    ),
+                    title: const Text('Choose from Gallery'),
+                    subtitle: const Text('Select from your photo gallery'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _pickImage(ImageSource.gallery);
+                    },
+                  ),
+                  if (userData['photoUrl']?.isNotEmpty == true)
+                    ListTile(
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.delete, color: Colors.red),
+                      ),
+                      title: const Text('Remove Photo'),
+                      subtitle: const Text('Use default profile picture'),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _removeProfilePhoto();
+                      },
+                    ),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            ),
+          ),
+    );
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final XFile? pickedFile = await _picker.pickImage(
+        source: source,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 80,
+      );
+
+      if (pickedFile != null) {
+        await _uploadProfileImage(File(pickedFile.path));
+      }
+    } catch (e) {
+      print('Error picking image: $e');
+      _showErrorSnackBar('Failed to select image. Please try again.');
+    }
+  }
+
+  Future<void> _uploadProfileImage(File imageFile) async {
+    // Show upload progress dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => const AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Uploading profile photo...'),
+              ],
+            ),
+          ),
+    );
+
+    try {
+      // Upload image to Firebase Storage and update user profile
+      final photoUrl = await FirebaseService.uploadProfileImage(imageFile);
+
+      if (photoUrl != null) {
+        // Update local user data
+        setState(() {
+          userData['photoUrl'] = photoUrl;
+        });
+
+        // Save updated photo URL to local storage
+        await AuthService.updateUserPhotoUrl(photoUrl);
+
+        Navigator.pop(context); // Close loading dialog
+        _showSuccessSnackBar('Profile photo updated successfully!');
+      } else {
+        Navigator.pop(context); // Close loading dialog
+        _showErrorSnackBar('Failed to upload image. Please try again.');
+      }
+    } catch (e) {
+      Navigator.pop(context); // Close loading dialog
+      print('Error uploading image: $e');
+      _showErrorSnackBar('Failed to upload image. Please try again.');
+    }
+  }
+
+  Future<void> _removeProfilePhoto() async {
+    try {
+      // Remove photo URL from user profile
+      await FirebaseService.removeProfileImage();
+
+      // Update local user data
+      setState(() {
+        userData['photoUrl'] = null;
+      });
+
+      // Remove photo URL from local storage
+      await AuthService.updateUserPhotoUrl('');
+
+      _showSuccessSnackBar('Profile photo removed successfully!');
+    } catch (e) {
+      print('Error removing profile photo: $e');
+      _showErrorSnackBar('Failed to remove photo. Please try again.');
+    }
+  }
+
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
     );
   }
 }

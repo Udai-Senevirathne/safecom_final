@@ -122,63 +122,104 @@ class WeatherRemoteDataSourceImpl implements WeatherRemoteDataSource {
   @override
   Future<Position> getCurrentLocation() async {
     try {
+      // First, check if we can get a cached/last known position
+      Position? lastKnownPosition = await Geolocator.getLastKnownPosition();
+
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        throw LocationException('Location services are disabled');
+      LocationPermission permission = await Geolocator.checkPermission();
+
+      // If services are disabled or permission denied, use default location
+      if (!serviceEnabled ||
+          permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        // Try to use last known position if available
+        if (lastKnownPosition != null) {
+          print('Using last known position due to disabled services');
+          return lastKnownPosition;
+        }
+
+        // Return default location (Colombo, Sri Lanka) as fallback
+        print('Using default location - Colombo, Sri Lanka');
+        return Position(
+          latitude: 6.9271, // Colombo latitude
+          longitude: 79.8612, // Colombo longitude
+          timestamp: DateTime.now(),
+          accuracy: 100.0,
+          altitude: 0.0,
+          altitudeAccuracy: 0.0,
+          heading: 0.0,
+          headingAccuracy: 0.0,
+          speed: 0.0,
+          speedAccuracy: 0.0,
+        );
       }
 
-      LocationPermission permission = await Geolocator.checkPermission();
+      // Request permission if denied
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
+          if (lastKnownPosition != null) {
+            return lastKnownPosition;
+          }
           throw PermissionException('Location permissions are denied');
         }
-      }
-
-      if (permission == LocationPermission.deniedForever) {
-        throw PermissionException(
-          'Location permissions are permanently denied',
-        );
       }
 
       Position? position;
 
       try {
-        // Try with high accuracy first
+        // Try with medium accuracy first (better for older devices)
         position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-          timeLimit: const Duration(seconds: 15),
+          desiredAccuracy: LocationAccuracy.medium,
+          timeLimit: const Duration(seconds: 10),
         );
       } catch (e) {
         try {
-          // Fallback to medium accuracy
+          // Fallback to low accuracy
           position = await Geolocator.getCurrentPosition(
-            desiredAccuracy: LocationAccuracy.medium,
-            timeLimit: const Duration(seconds: 20),
+            desiredAccuracy: LocationAccuracy.low,
+            timeLimit: const Duration(seconds: 15),
           );
         } catch (e2) {
-          try {
-            // Final fallback to low accuracy
-            position = await Geolocator.getCurrentPosition(
-              desiredAccuracy: LocationAccuracy.low,
-              timeLimit: const Duration(seconds: 25),
-            );
-          } catch (e3) {
-            // Use last known position if available
-            position = await Geolocator.getLastKnownPosition();
-            if (position == null) {
-              throw LocationException(
-                'Unable to determine location - please check GPS and try again',
-              );
-            }
+          // Use last known position as final fallback
+          if (lastKnownPosition != null) {
+            print('Using last known position due to timeout');
+            return lastKnownPosition;
           }
+
+          // Ultimate fallback to default location
+          print('All location methods failed, using default location');
+          return Position(
+            latitude: 6.9271, // Colombo latitude
+            longitude: 79.8612, // Colombo longitude
+            timestamp: DateTime.now(),
+            accuracy: 100.0,
+            altitude: 0.0,
+            altitudeAccuracy: 0.0,
+            heading: 0.0,
+            headingAccuracy: 0.0,
+            speed: 0.0,
+            speedAccuracy: 0.0,
+          );
         }
       }
 
       return position;
     } catch (e) {
-      if (e is LocationException || e is PermissionException) rethrow;
-      throw LocationException('Failed to get location: ${e.toString()}');
+      // Final safety net - always return some location
+      print('Location error: $e - using default location');
+      return Position(
+        latitude: 6.9271, // Colombo latitude
+        longitude: 79.8612, // Colombo longitude
+        timestamp: DateTime.now(),
+        accuracy: 100.0,
+        altitude: 0.0,
+        altitudeAccuracy: 0.0,
+        heading: 0.0,
+        headingAccuracy: 0.0,
+        speed: 0.0,
+        speedAccuracy: 0.0,
+      );
     }
   }
 }

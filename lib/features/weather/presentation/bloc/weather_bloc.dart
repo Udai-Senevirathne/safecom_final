@@ -81,8 +81,8 @@ class WeatherBloc extends Bloc<WeatherEvent, WeatherState> {
 
       await locationResult.fold(
         (failure) async {
-          // If location fails, emit the specific error but also try with default location
-          final String locationError = failure.message;
+          // If location fails, use default location for weather
+          print('Location failed: ${failure.message}, using default location');
 
           // Try with a default location as fallback (Colombo, Sri Lanka)
           const double defaultLat = 6.9271; // Colombo
@@ -94,9 +94,17 @@ class WeatherBloc extends Bloc<WeatherEvent, WeatherState> {
           );
 
           weatherResult.fold(
-            (weatherFailure) => emit(WeatherLocationError(locationError)),
+            (weatherFailure) => emit(
+              WeatherError(
+                'Unable to get weather • Using default location: ${weatherFailure.message}',
+              ),
+            ),
             (weather) => emit(
-              WeatherLoaded(weather: weather, lastUpdated: DateTime.now()),
+              WeatherLoaded(
+                weather: weather,
+                lastUpdated: DateTime.now(),
+                isDefaultLocation: true,
+              ),
             ),
           );
         },
@@ -108,15 +116,45 @@ class WeatherBloc extends Bloc<WeatherEvent, WeatherState> {
           );
 
           weatherResult.fold(
-            (failure) => emit(WeatherError(failure.message)),
+            (failure) =>
+                emit(WeatherError('Weather unavailable • ${failure.message}')),
             (weather) => emit(
-              WeatherLoaded(weather: weather, lastUpdated: DateTime.now()),
+              WeatherLoaded(
+                weather: weather,
+                lastUpdated: DateTime.now(),
+                isDefaultLocation: false,
+              ),
             ),
           );
         },
       );
     } catch (e) {
-      emit(WeatherError('Unable to get location • Please check permissions'));
+      // Ultimate fallback
+      print('Weather loading error: $e');
+
+      // Try with default location one more time
+      try {
+        const double defaultLat = 6.9271; // Colombo
+        const double defaultLng = 79.8612;
+
+        final weatherResult = await getCurrentWeatherUseCase.call(
+          latitude: defaultLat,
+          longitude: defaultLng,
+        );
+
+        weatherResult.fold(
+          (failure) => emit(WeatherError('Weather service unavailable')),
+          (weather) => emit(
+            WeatherLoaded(
+              weather: weather,
+              lastUpdated: DateTime.now(),
+              isDefaultLocation: true,
+            ),
+          ),
+        );
+      } catch (finalError) {
+        emit(WeatherError('Weather service temporarily unavailable'));
+      }
     }
   }
 

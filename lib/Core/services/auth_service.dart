@@ -7,6 +7,10 @@ class AuthService {
   static const String _keyUserName = 'user_name';
   static const String _keyUserEmail = 'user_email';
   static const String _keyUserPhone = 'user_phone';
+  static const String _keyUserPhotoUrl = 'user_photo_url';
+  static const String _keyUserGoogleId = 'user_google_id';
+  static const String _keyUserEmailVerified = 'user_email_verified';
+  static const String _keyUserSignInMethod = 'user_signin_method';
 
   // In-memory fallback storage
   static final Map<String, dynamic> _memoryStorage = {};
@@ -242,17 +246,33 @@ class AuthService {
         _memoryStorage.remove(_keyUserName);
         _memoryStorage.remove(_keyUserEmail);
         _memoryStorage.remove(_keyUserPhone);
+        _memoryStorage.remove(_keyUserPhotoUrl);
+        _memoryStorage.remove(_keyUserGoogleId);
+        _memoryStorage.remove(_keyUserEmailVerified);
+        _memoryStorage.remove(_keyUserSignInMethod);
         debugPrint('Cleared user data from memory storage');
       } else {
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove(_keyUserName);
         await prefs.remove(_keyUserEmail);
         await prefs.remove(_keyUserPhone);
+        await prefs.remove(_keyUserPhotoUrl);
+        await prefs.remove(_keyUserGoogleId);
+        await prefs.remove(_keyUserEmailVerified);
+        await prefs.remove(_keyUserSignInMethod);
         debugPrint('Cleared user data from SharedPreferences');
       }
 
       // Notify listeners about sign out
-      _userDataController.add({'name': null, 'email': null, 'phone': null});
+      _userDataController.add({
+        'name': null,
+        'email': null,
+        'phone': null,
+        'photoUrl': null,
+        'googleId': null,
+        'emailVerified': null,
+        'signInMethod': null,
+      });
       debugPrint('Sign out completed successfully');
     } catch (e, stackTrace) {
       debugPrint('Sign out error: $e');
@@ -279,14 +299,34 @@ class AuthService {
       final name = await _getValue<String>(_keyUserName);
       final email = await _getValue<String>(_keyUserEmail);
       final phone = await _getValue<String>(_keyUserPhone);
+      final photoUrl = await _getValue<String>(_keyUserPhotoUrl);
+      final googleId = await _getValue<String>(_keyUserGoogleId);
+      final emailVerified = await _getValue<String>(_keyUserEmailVerified);
+      final signInMethod = await _getValue<String>(_keyUserSignInMethod);
 
-      final userData = {'name': name, 'email': email, 'phone': phone};
+      final userData = {
+        'name': name,
+        'email': email,
+        'phone': phone,
+        'photoUrl': photoUrl,
+        'googleId': googleId,
+        'emailVerified': emailVerified,
+        'signInMethod': signInMethod,
+      };
 
       debugPrint('Retrieved user data: $userData');
       return userData;
     } catch (e) {
       debugPrint('Get user data error: $e');
-      return {'name': null, 'email': null, 'phone': null};
+      return {
+        'name': null,
+        'email': null,
+        'phone': null,
+        'photoUrl': null,
+        'googleId': null,
+        'emailVerified': null,
+        'signInMethod': null,
+      };
     }
   }
 
@@ -338,6 +378,28 @@ class AuthService {
       debugPrint('Update profile error: $e');
       debugPrint('Error type: ${e.runtimeType}');
       debugPrint('Stack trace: $stackTrace');
+      return false;
+    }
+  }
+
+  // Update user photo URL
+  static Future<bool> updateUserPhotoUrl(String photoUrl) async {
+    try {
+      debugPrint('Updating user photo URL: $photoUrl');
+      await _initStorage();
+
+      bool success = await _setValue(_keyUserPhotoUrl, photoUrl);
+      if (success) {
+        debugPrint('Photo URL updated successfully in local storage');
+
+        // Emit updated user data to stream listeners
+        final userData = await getUserData();
+        _userDataController.add(userData);
+      }
+
+      return success;
+    } catch (e) {
+      debugPrint('Error updating user photo URL: $e');
       return false;
     }
   }
@@ -403,14 +465,49 @@ class AuthService {
   static Future<bool> saveUserData(
     String name,
     String email,
-    String phone,
-  ) async {
+    String phone, {
+    String? photoUrl,
+    String? googleId,
+    String? emailVerified,
+    String? signInMethod,
+  }) async {
     try {
       final nameResult = await _setValue(_keyUserName, name.trim());
       final emailResult = await _setValue(_keyUserEmail, email.trim());
       final phoneResult = await _setValue(_keyUserPhone, phone.trim());
 
-      final success = nameResult && emailResult && phoneResult;
+      bool photoResult = true;
+      bool googleIdResult = true;
+      bool emailVerifiedResult = true;
+      bool signInMethodResult = true;
+
+      if (photoUrl != null) {
+        photoResult = await _setValue(_keyUserPhotoUrl, photoUrl.trim());
+      }
+      if (googleId != null) {
+        googleIdResult = await _setValue(_keyUserGoogleId, googleId.trim());
+      }
+      if (emailVerified != null) {
+        emailVerifiedResult = await _setValue(
+          _keyUserEmailVerified,
+          emailVerified,
+        );
+      }
+      if (signInMethod != null) {
+        signInMethodResult = await _setValue(
+          _keyUserSignInMethod,
+          signInMethod,
+        );
+      }
+
+      final success =
+          nameResult &&
+          emailResult &&
+          phoneResult &&
+          photoResult &&
+          googleIdResult &&
+          emailVerifiedResult &&
+          signInMethodResult;
       if (success) {
         // Notify listeners about the updated user data
         final userData = await getUserData();
@@ -437,12 +534,20 @@ class AuthService {
         _memoryStorage.remove(_keyUserName);
         _memoryStorage.remove(_keyUserEmail);
         _memoryStorage.remove(_keyUserPhone);
+        _memoryStorage.remove(_keyUserPhotoUrl);
+        _memoryStorage.remove(_keyUserGoogleId);
+        _memoryStorage.remove(_keyUserEmailVerified);
+        _memoryStorage.remove(_keyUserSignInMethod);
         debugPrint('Cleared all user data from memory storage');
       } else {
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove(_keyUserName);
         await prefs.remove(_keyUserEmail);
         await prefs.remove(_keyUserPhone);
+        await prefs.remove(_keyUserPhotoUrl);
+        await prefs.remove(_keyUserGoogleId);
+        await prefs.remove(_keyUserEmailVerified);
+        await prefs.remove(_keyUserSignInMethod);
 
         // Also clear any other app-specific data for account deletion
         await prefs.remove('notifications_enabled');
@@ -455,7 +560,15 @@ class AuthService {
       }
 
       // Notify listeners about data clearing
-      _userDataController.add({'name': null, 'email': null, 'phone': null});
+      _userDataController.add({
+        'name': null,
+        'email': null,
+        'phone': null,
+        'photoUrl': null,
+        'googleId': null,
+        'emailVerified': null,
+        'signInMethod': null,
+      });
       debugPrint('User data clearing completed successfully');
       return true;
     } catch (e, stackTrace) {
